@@ -2,69 +2,204 @@ import * as cdk from "aws-cdk-lib";
 import * as apigateway from "aws-cdk-lib/aws-apigateway";
 import * as lambda from "aws-cdk-lib/aws-lambda";
 import * as path from "path";
+import * as dynamodb from "aws-cdk-lib/aws-dynamodb";
 import { Construct } from "constructs";
+import { NodejsFunction } from "aws-cdk-lib/aws-lambda-nodejs";
+import { ProductsTableName, StocksTableName } from "./seed";
+import {
+  LAMBDA_FOLDER_PATH,
+  PRODUCT_ID_KEY,
+  SERVER_ERROR,
+} from "./shared/constant";
 
 export class ProductsLabdaStack extends cdk.Stack {
+  productsTable: dynamodb.ITable;
+  stocksTable: dynamodb.ITable;
+  api: apigateway.RestApi;
+
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
 
-    // GET products list lambda
-    const getProudctsListlambda = new lambda.Function(this, "get-list-lambda", {
-      runtime: lambda.Runtime.NODEJS_20_X,
-      memorySize: 1024,
-      timeout: cdk.Duration.seconds(5),
-      handler: "getProductsList.main",
-      code: lambda.Code.fromAsset(path.join(__dirname, "./")),
-    });
+    // Tables import setup
+    this.productsTable = dynamodb.Table.fromTableName(
+      this,
+      "imported-products-table",
+      ProductsTableName
+    );
 
-    // GET product by id lambda
-    const getProductByIdLambda = new lambda.Function(this, "get-by-id-lambda", {
-      runtime: lambda.Runtime.NODEJS_20_X,
-      memorySize: 1024,
-      timeout: cdk.Duration.seconds(5),
-      handler: "getProductById.main",
-      code: lambda.Code.fromAsset(path.join(__dirname, "./")),
-    });
+    this.stocksTable = dynamodb.Table.fromTableName(
+      this,
+      "imported-stocks-table",
+      StocksTableName
+    );
+
+    // Lambdas
+    const getProudctsListlambda = this.createLambda(
+      "get-list-lambda",
+      "getProductList"
+    );
+    const getProductByIdLambda = this.createLambda(
+      "get-by-id-lambda",
+      "getProductById"
+    );
+    const createProductLambda = this.createLambda(
+      "create-product-lambda",
+      "createProduct"
+    );
 
     // API Gateway
-    const api = new apigateway.RestApi(this, "products-api", {
+    this.api = new apigateway.RestApi(this, "products-api", {
       restApiName: "My Products API Gateway",
       description: "This API serves the Lambda functions.",
+      defaultCorsPreflightOptions: {
+        allowOrigins: apigateway.Cors.ALL_ORIGINS,
+        allowMethods: ["GET"],
+      },
     });
 
     // Integration for listing products
     const productsLambdaIntegration = new apigateway.LambdaIntegration(
       getProudctsListlambda,
-      { proxy: true }
+      {
+        proxy: false,
+        integrationResponses: [
+          this.configureIntegrationResponseHTTP200(),
+          this.configureIntegrationResponseHTTP500(),
+        ],
+      }
     );
 
     // Integration for getting product by ID
     const productByIdIntegration = new apigateway.LambdaIntegration(
       getProductByIdLambda,
-      { proxy: true }
+      {
+        proxy: false,
+        requestTemplates: {
+          "application/json": JSON.stringify({
+            productId: `$input.params('${PRODUCT_ID_KEY}')`,
+          }),
+        },
+        integrationResponses: [
+          this.configureIntegrationResponseHTTP200(),
+          this.configureIntegrationResponseHTTP500(),
+        ],
+      }
+    );
+
+    // Integration for creating product
+    const createProductLambdaIntegration = new apigateway.LambdaIntegration(
+      createProductLambda,
+      {
+        proxy: false,
+        requestTemplates: {
+          "application/json": "$input.body",
+        },
+        integrationResponses: [
+          this.configureIntegrationResponseHTTP200(),
+          this.configureIntegrationResponseHTTP500(),
+        ],
+      }
     );
 
     // /products route
-    const productsResource = api.root.addResource("products");
-    productsResource.addMethod("GET", productsLambdaIntegration);
-    productsResource.addCorsPreflight({
-      allowOrigins: apigateway.Cors.ALL_ORIGINS,
-      allowMethods: apigateway.Cors.ALL_METHODS,
-      allowHeaders: apigateway.Cors.DEFAULT_HEADERS,
+    const productsResource = this.api.root.addResource("products");
+    productsResource.addMethod("GET", productsLambdaIntegration, {
+      methodResponses: [
+        this.configureMethodResponseHTTP200(),
+        this.configureMethodResponseHTTP500(),
+      ],
     });
 
     // /products/{productId} route
-    const productIdResource = productsResource.addResource("{productId}");
-    productIdResource.addMethod("GET", productByIdIntegration);
-    productIdResource.addCorsPreflight({
-      allowOrigins: apigateway.Cors.ALL_ORIGINS,
-      allowMethods: apigateway.Cors.ALL_METHODS,
-      allowHeaders: apigateway.Cors.DEFAULT_HEADERS,
+    const productIdResource = productsResource.addResource(
+      `{${PRODUCT_ID_KEY}}`
+    );
+    productIdResource.addMethod("GET", productByIdIntegration, {
+      methodResponses: [
+        this.configureMethodResponseHTTP200(),
+        this.configureMethodResponseHTTP500(),
+      ],
+    });
+
+    // POST /products route
+    productsResource.addMethod("POST", createProductLambdaIntegration, {
+      methodResponses: [
+        this.configureMethodResponseHTTP200(),
+        this.configureMethodResponseHTTP500(),
+      ],
     });
 
     // Output API URL
     new cdk.CfnOutput(this, "ApiUrl", {
-      value: api.url,
+      value: this.api.url,
     });
+  }
+
+  private createLambda(lambdaName: string, handler: string) {
+    const lambdaFn = new NodejsFunction(this, lambdaName, {
+      runtime: lambda.Runtime.NODEJS_20_X,
+      memorySize: 1024,
+      timeout: cdk.Duration.seconds(5),
+      handler,
+      entry: path.join(__dirname, LAMBDA_FOLDER_PATH, handler, "handler.ts"),
+      environment: {
+        PRODUCTS_TABLE_NAME: ProductsTableName as string,
+        STOCKS_TABLE_NAME: StocksTableName as string,
+      },
+    });
+
+    this.productsTable.grantReadWriteData(lambdaFn);
+    this.stocksTable.grantReadWriteData(lambdaFn);
+
+    return lambdaFn;
+  }
+
+  private configureIntegrationResponseHTTP200(): apigateway.IntegrationResponse {
+    return {
+      statusCode: "200",
+      responseTemplates: { "application/json": "$input.json('$')" },
+      responseParameters: this.configureIntegrationResponseParameters(),
+    };
+  }
+
+  private configureIntegrationResponseHTTP500(): apigateway.IntegrationResponse {
+    return {
+      statusCode: "500",
+      selectionPattern: `.*${SERVER_ERROR}*.`,
+      responseTemplates: {
+        "application/json": JSON.stringify({
+          message: "Server error",
+        }),
+      },
+      responseParameters: this.configureIntegrationResponseParameters(),
+    };
+  }
+
+  private configureMethodResponseHTTP200(): apigateway.MethodResponse {
+    return {
+      statusCode: "200",
+      responseParameters: this.configureMethodResponseParameters(),
+    };
+  }
+
+  private configureMethodResponseHTTP500(): apigateway.MethodResponse {
+    return {
+      statusCode: "500",
+      responseParameters: this.configureMethodResponseParameters(),
+    };
+  }
+
+  private configureIntegrationResponseParameters(): apigateway.IntegrationResponse["responseParameters"] {
+    return {
+      "method.response.header.Access-Control-Allow-Origin": "'*'",
+      "method.response.header.Content-Type": "'application/json'",
+    };
+  }
+
+  private configureMethodResponseParameters(): apigateway.MethodResponse["responseParameters"] {
+    return {
+      "method.response.header.Access-Control-Allow-Origin": true,
+      "method.response.header.Content-Type": true,
+    };
   }
 }
