@@ -49,8 +49,8 @@ export class ProductsLabdaStack extends cdk.Stack {
 
     // API Gateway
     this.api = new apigateway.RestApi(this, "products-api", {
-      restApiName: "My Products API Gateway",
-      description: "This API serves the Lambda functions.",
+      restApiName: "Products API Gateway",
+      description: "This API serves the products lambda functions.",
       defaultCorsPreflightOptions: {
         allowOrigins: apigateway.Cors.ALL_ORIGINS,
         allowMethods: ["GET"],

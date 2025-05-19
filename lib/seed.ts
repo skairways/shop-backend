@@ -1,9 +1,4 @@
-import {
-  BatchWriteItemCommand,
-  DeleteItemCommand,
-  PutItemCommand,
-  ScanCommand,
-} from "@aws-sdk/client-dynamodb";
+import { BatchWriteItemCommand } from "@aws-sdk/client-dynamodb";
 import { v4 } from "uuid";
 import { getDynamoDBClient } from "./shared/utils";
 import { Product } from "./shared/types";
@@ -74,4 +69,4 @@ const PRODUCTS_MOCK: Product[] = [
   },
 ];
 
-seedProducts();
+// seedProducts();
