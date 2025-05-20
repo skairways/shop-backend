@@ -6,26 +6,33 @@ import * as apigateway from "aws-cdk-lib/aws-apigateway";
 import { Construct } from "constructs";
 import { NodejsFunction } from "aws-cdk-lib/aws-lambda-nodejs";
 import * as s3n from "aws-cdk-lib/aws-s3-notifications";
-import {
-  ImportServiceBucket,
-  LAMBDA_FOLDER_PATH,
-  SERVER_ERROR,
-} from "./shared/constant";
+import { LAMBDA_FOLDER_PATH, SERVER_ERROR } from "./shared/constant";
 
 export class ImportServiceStack extends cdk.Stack {
   api: apigateway.RestApi;
   constructor(scope: Construct, id: string, props: cdk.StackProps) {
     super(scope, id, props);
 
-    const bucket = new s3.Bucket(this, "MyImportServiceBucket", {
+    const bucket = new s3.Bucket(this, "ImportServiceBucket", {
       versioned: true,
-      bucketName: ImportServiceBucket,
       removalPolicy: cdk.RemovalPolicy.DESTROY,
+      blockPublicAccess: new s3.BlockPublicAccess({
+        blockPublicAcls: false,
+        ignorePublicAcls: false,
+        blockPublicPolicy: false,
+        restrictPublicBuckets: false,
+      }),
     });
 
     const importProductsFileLambda = this.createLambda(
       "import-products-file-lambda",
       "importProductsFile"
+    );
+
+    bucket.grantReadWrite(importProductsFileLambda);
+    importProductsFileLambda.addEnvironment(
+      "IMPORT_BUCKET_NAME",
+      bucket.bucketName
     );
 
     const importFileParserLambda = this.createLambda(
@@ -54,6 +61,11 @@ export class ImportServiceStack extends cdk.Stack {
       importProductsFileLambda,
       {
         proxy: false,
+        requestTemplates: {
+          "application/json": JSON.stringify({
+            name: "$input.params('name')",
+          }),
+        },
         integrationResponses: [
           this.configureIntegrationResponseHTTP200(),
           this.configureIntegrationResponseHTTP500(),
