@@ -2,10 +2,9 @@ import { BatchWriteItemCommand } from "@aws-sdk/client-dynamodb";
 import { v4 } from "uuid";
 import { getDynamoDBClient } from "./shared/utils";
 import { Product } from "./shared/types";
+import { ProductsTableName, StocksTableName } from "./shared/constant";
 
 const client = getDynamoDBClient();
-export const ProductsTableName = "Products";
-export const StocksTableName = "Stock";
 
 async function seedProducts() {
   try {
