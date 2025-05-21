@@ -5,7 +5,11 @@ import * as path from "path";
 import * as dynamodb from "aws-cdk-lib/aws-dynamodb";
 import { Construct } from "constructs";
 import { NodejsFunction } from "aws-cdk-lib/aws-lambda-nodejs";
-import { ProductsTableName, StocksTableName } from "./seed";
+import * as sqs from "aws-cdk-lib/aws-sqs";
+import { ProductsTableName, StocksTableName } from "./shared/constant";
+import * as sns from "aws-cdk-lib/aws-sns";
+import * as subs from "aws-cdk-lib/aws-sns-subscriptions";
+import { SqsEventSource } from "aws-cdk-lib/aws-lambda-event-sources";
 import {
   LAMBDA_FOLDER_PATH,
   PRODUCT_ID_KEY,
@@ -16,6 +20,8 @@ export class ProductsLabdaStack extends cdk.Stack {
   productsTable: dynamodb.ITable;
   stocksTable: dynamodb.ITable;
   api: apigateway.RestApi;
+  catalogItemsQueue: cdk.aws_sqs.Queue;
+  createProductTopic: sns.Topic;
 
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
@@ -33,19 +39,48 @@ export class ProductsLabdaStack extends cdk.Stack {
       StocksTableName
     );
 
+    this.catalogItemsQueue = new sqs.Queue(this, "catalog-items-queue", {
+      visibilityTimeout: cdk.Duration.seconds(30),
+    });
+
+    this.createProductTopic = new sns.Topic(this, "create-product-topic", {
+      displayName: "Product creation notification topic",
+    });
+
     // Lambdas
     const getProudctsListlambda = this.createLambda(
       "get-list-lambda",
       "getProductList"
     );
+
     const getProductByIdLambda = this.createLambda(
       "get-by-id-lambda",
       "getProductById"
     );
+
     const createProductLambda = this.createLambda(
       "create-product-lambda",
       "createProduct"
     );
+
+    const catalogBatchProcessLambda = this.createLambda(
+      "catalog-batch-process-lambda",
+      "catalogBatchProcess"
+    );
+
+    // SQS
+    catalogBatchProcessLambda.addEventSource(
+      new SqsEventSource(this.catalogItemsQueue, {
+        batchSize: 5,
+      })
+    );
+    this.productsTable.grantWriteData(catalogBatchProcessLambda);
+
+    //SNS
+    this.createProductTopic.addSubscription(
+      new subs.EmailSubscription("sultonbek.nazarov1999@gmail.com")
+    );
+    this.createProductTopic.grantPublish(catalogBatchProcessLambda);
 
     // API Gateway
     this.api = new apigateway.RestApi(this, "products-api", {
@@ -145,6 +180,8 @@ export class ProductsLabdaStack extends cdk.Stack {
       environment: {
         PRODUCTS_TABLE_NAME: ProductsTableName as string,
         STOCKS_TABLE_NAME: StocksTableName as string,
+        SQS_QUEUE_URL: this.catalogItemsQueue.queueUrl,
+        CREATE_PRODUCT_TOPIC_ARN: this.createProductTopic.topicArn,
       },
     });
 

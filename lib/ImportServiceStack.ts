@@ -8,9 +8,12 @@ import { NodejsFunction } from "aws-cdk-lib/aws-lambda-nodejs";
 import * as s3n from "aws-cdk-lib/aws-s3-notifications";
 import { LAMBDA_FOLDER_PATH, SERVER_ERROR } from "./shared/constant";
 
+interface ImportServiceStackProps extends cdk.StackProps {
+  catalogQueue: cdk.aws_sqs.Queue;
+}
 export class ImportServiceStack extends cdk.Stack {
   api: apigateway.RestApi;
-  constructor(scope: Construct, id: string, props: cdk.StackProps) {
+  constructor(scope: Construct, id: string, props: ImportServiceStackProps) {
     super(scope, id, props);
 
     const bucket = new s3.Bucket(this, "ImportServiceBucket", {
@@ -37,10 +40,12 @@ export class ImportServiceStack extends cdk.Stack {
 
     const importFileParserLambda = this.createLambda(
       "import-file-parser-lambda",
-      "importFileParser"
+      "importFileParser",
+      props
     );
 
     bucket.grantReadWrite(importFileParserLambda);
+    props.catalogQueue.grantSendMessages(importFileParserLambda);
     bucket.addEventNotification(
       s3.EventType.OBJECT_CREATED_PUT,
       new s3n.LambdaDestination(importFileParserLambda),
@@ -82,13 +87,20 @@ export class ImportServiceStack extends cdk.Stack {
     });
   }
 
-  private createLambda(lambdaName: string, handler: string) {
+  private createLambda(
+    lambdaName: string,
+    handler: string,
+    props?: ImportServiceStackProps
+  ) {
     return new NodejsFunction(this, lambdaName, {
       runtime: lambda.Runtime.NODEJS_20_X,
       memorySize: 1024,
       timeout: cdk.Duration.seconds(5),
       handler,
       entry: path.join(__dirname, LAMBDA_FOLDER_PATH, handler, "handler.ts"),
+      environment: {
+        SQS_QUEUE_URL: props?.catalogQueue.queueUrl as string,
+      },
     });
   }
 
