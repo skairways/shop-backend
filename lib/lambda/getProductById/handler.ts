@@ -6,7 +6,7 @@ import {
 } from "../../shared/utils";
 import { SERVER_ERROR } from "../../shared/constant";
 import { mergeData } from "./utils";
-import { ProductsTableName, StocksTableName } from "../../seed";
+import { ProductsTableName, StocksTableName } from "../../shared/constant";
 
 const client = getDynamoDBClient();
 

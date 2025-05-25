@@ -1,7 +1,7 @@
 import { Handler } from "aws-lambda";
 import { PutItemCommand } from "@aws-sdk/client-dynamodb";
 import { v4 } from "uuid";
-import { ProductsTableName, StocksTableName } from "../../seed";
+import { ProductsTableName, StocksTableName } from "../../shared/constant";
 import { Product } from "../../shared/types";
 import { getDynamoDBClient } from "../../shared/utils";
 
