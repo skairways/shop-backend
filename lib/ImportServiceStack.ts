@@ -10,6 +10,7 @@ import { LAMBDA_FOLDER_PATH, SERVER_ERROR } from "./shared/constant";
 
 interface ImportServiceStackProps extends cdk.StackProps {
   catalogQueue: cdk.aws_sqs.Queue;
+  authorizerLambdaArn: string;
 }
 export class ImportServiceStack extends cdk.Stack {
   api: apigateway.RestApi;
@@ -78,12 +79,34 @@ export class ImportServiceStack extends cdk.Stack {
       }
     );
 
+    const authorizerLambda = lambda.Function.fromFunctionArn(
+      this,
+      "ImportedBasicAuthorizerLambda",
+      cdk.Fn.importValue("BasicAuthorizerLambdaArn")
+    );
+
+    const lambdaAuthorizer = new apigateway.TokenAuthorizer(
+      this,
+      "LambdaAuthorizer",
+      {
+        handler: authorizerLambda,
+        identitySource: apigateway.IdentitySource.header("Authorization"),
+      }
+    );
+
     const importProductsFileResource = this.api.root.addResource("import");
     importProductsFileResource.addMethod("GET", importProductsFileIntegration, {
       methodResponses: [
         this.configureMethodResponseHTTP200(),
         this.configureMethodResponseHTTP500(),
       ],
+      authorizer: lambdaAuthorizer,
+      authorizationType: apigateway.AuthorizationType.CUSTOM,
+    });
+
+    // Output API URL
+    new cdk.CfnOutput(this, "ApiUrl", {
+      value: this.api.url,
     });
   }
 
