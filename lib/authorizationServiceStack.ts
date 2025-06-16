@@ -1,5 +1,4 @@
 import * as lambda from "aws-cdk-lib/aws-lambda";
-import * as apigateway from "aws-cdk-lib/aws-apigateway";
 import * as cdk from "aws-cdk-lib";
 import * as path from "path";
 import { Construct } from "constructs";
