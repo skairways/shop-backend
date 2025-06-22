@@ -9,3 +9,6 @@ cdk.out
 
 # environment
 .env
+
+# build output
+dist.zip
