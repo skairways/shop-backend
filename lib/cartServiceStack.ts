@@ -13,7 +13,7 @@ export class CartServiceStack extends cdk.Stack {
 
     const nestAppLambda = new lambda.Function(this, "NestLambda", {
       runtime: lambda.Runtime.NODEJS_22_X,
-      handler: "dist/src/serverless-main.handler",
+      handler: "dist/serverless-main.handler",
       code: lambda.Code.fromAsset("dist.zip"),
       timeout: cdk.Duration.seconds(30),
       memorySize: 512,
@@ -29,13 +29,8 @@ export class CartServiceStack extends cdk.Stack {
 
     this.api = new apigateway.LambdaRestApi(this, "NestApi", {
       handler: nestAppLambda,
-      proxy: false,
+      proxy: true,
     });
-
-    this.api.root.addMethod("ANY");
-
-    const proxyResource = this.api.root.addResource("{proxy+}");
-    proxyResource.addMethod("ANY");
 
     // Output API URL
     new cdk.CfnOutput(this, "Nest app ApiUrl", {
